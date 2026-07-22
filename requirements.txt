@@ -4,4 +4,3 @@ reportlab
 st-gsheets-connection
 openpyxl
 pandas
-openpyxl
