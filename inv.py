@@ -12,16 +12,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 ) 
 
-# ------- OCULTAR SOLO ICONOS DE LA ESQUINA DERECHA Y MANTENER SIDEBAR ---------
+# ------- OCULTAR ICONOS DE LA ESQUINA DERECHA SIN AFECTAR EL SIDEBAR ---------
 st.markdown("""
     <style>
-    /* Ocultar los elementos del menú principal/Deploy de la esquina superior derecha */
-    [data-testid="stStatusWidget"],
-    .stAppToolbar {
+    /* Ocultar el botón de Deploy y elementos de la derecha en versiones recientes */
+    .stAppDeployButton,
+    [data-testid="stStatusWidget"] {
         display: none !important;
     }
     
-    /* Alternativa para ocultar los botones/iconos específicos de la derecha del header */
+    /* Ocultar los elementos interactivos del margen derecho manteniendo el contenedor del menú desplegable */
     header[data-testid="stHeader"] > div:last-child {
         display: none !important;
     }
