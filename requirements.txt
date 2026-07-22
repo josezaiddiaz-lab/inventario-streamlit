@@ -1,4 +1,0 @@
-streamlit
-fpdf2
-reportlab
-st-gsheets-connection
