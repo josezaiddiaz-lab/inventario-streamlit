@@ -79,12 +79,13 @@ def cargar_inventario_dataframe():
     try:
         df = conn.read(worksheet="Productos", ttl=0)
         if df is None or df.empty:
-            return pd.DataFrame(columns=["PRODUCTO", "CANTIDAD_ACTUAL", "ABIERTOS", "ALMACEN", "FECHA_INGRESO"])
-        if "ABIERTOS" not in df.columns:
-            df["ABIERTOS"] = 0
+            return pd.DataFrame(columns=["PRODUCTO", "CANTIDAD_ACTUAL", "CANTIDAD_ABIERTOS", "ALMACEN", "FECHA_INGRESO"])
+        # Asegurar compatibilidad si la columna abierta no existe en hojas anteriores
+        if "CANTIDAD_ABIERTOS" not in df.columns:
+            df["CANTIDAD_ABIERTOS"] = 0
         return df
     except Exception:
-        return pd.DataFrame(columns=["PRODUCTO", "CANTIDAD_ACTUAL", "ABIERTOS", "ALMACEN", "FECHA_INGRESO"])
+        return pd.DataFrame(columns=["PRODUCTO", "CANTIDAD_ACTUAL", "CANTIDAD_ABIERTOS", "ALMACEN", "FECHA_INGRESO"])
 
 def cargar_historial_dataframe():
     """Lee la pestaña 'Historial' de Google Sheets en tiempo real (ttl=0)."""
@@ -98,7 +99,7 @@ def cargar_historial_dataframe():
 
 def limpiar_entero(valor):
     try:
-        return int(float(valor))
+        return int(valor)
     except (ValueError, TypeError):
         return 0
 
@@ -162,7 +163,7 @@ def registrar_producto(nombre, cantidad, abiertos, fecha, almacen):
     nuevo_prod_df = pd.DataFrame([{
         "PRODUCTO": nombre_mayus,
         "CANTIDAD_ACTUAL": cant_limpia,
-        "ABIERTOS": abiertos_limpios,
+        "CANTIDAD_ABIERTOS": abiertos_limpios,
         "ALMACEN": almacen,
         "FECHA_INGRESO": fecha
     }])
@@ -171,7 +172,7 @@ def registrar_producto(nombre, cantidad, abiertos, fecha, almacen):
     conn.update(worksheet="Productos", data=df_actualizado.astype(str))
     
     # 📝 REGISTRO EN LA PESTAÑA HISTORIAL
-    registrar_en_historial(nombre_mayus, "Entrada (Inicial)", cant_limpia, fecha, "Registro inicial de producto")
+    registrar_en_historial(nombre_mayus, "Entrada (Inicial)", cant_limpia, fecha, f"Registro inicial (Abiertos: {abiertos_limpios})")
     
     # 📝 REGISTRO INVISIBLE EN LA PESTAÑA 'LONG'
     usuario_actual = st.session_state.get("usuario", "sistema")
@@ -180,7 +181,7 @@ def registrar_producto(nombre, cantidad, abiertos, fecha, almacen):
     return True
 
 # ----------MOVIMIENTO DE STOCK---------- 
-def registrar_movimiento(nombre, tipo, cantidad, descripcion=""): 
+def registrar_movimiento(nombre, tipo, categoria_salida, cantidad, descripcion=""): 
     df_productos = cargar_inventario_dataframe()
     
     if df_productos.empty or nombre not in df_productos["PRODUCTO"].values: 
@@ -189,28 +190,46 @@ def registrar_movimiento(nombre, tipo, cantidad, descripcion=""):
     
     idx = df_productos[df_productos["PRODUCTO"] == nombre].index[0]
     cant_actual = limpiar_entero(df_productos.loc[idx, "CANTIDAD_ACTUAL"])
+    cant_abiertos = limpiar_entero(df_productos.loc[idx, "CANTIDAD_ABIERTOS"])
     cant_mov = limpiar_entero(cantidad)
         
-    if tipo == "Salida" and cant_mov > cant_actual: 
-        st.warning("No hay suficiente stock para realizar la salida.") 
-        return 
-        
-    if tipo == "Entrada": 
-        nueva_cant = cant_actual + cant_mov
-    else: 
-        nueva_cant = cant_actual - cant_mov
+    if tipo == "Salida":
+        if categoria_salida == "Cerrados (Cantidad Normal)":
+            if cant_mov > cant_actual:
+                st.warning("No hay suficiente stock en cantidad normal para realizar la salida.")
+                return
+            nueva_cant = cant_actual - cant_mov
+            nueva_abiertos = cant_abiertos
+            tipo_historial = "Salida (Normal)"
+        else: # Abiertos
+            if cant_mov > cant_abiertos:
+                st.warning("No hay suficientes unidades abiertas para realizar la salida.")
+                return
+            nueva_cant = cant_actual
+            nueva_abiertos = cant_abiertos - cant_mov
+            tipo_historial = "Salida (Abiertos)"
+    else: # Entrada
+        if categoria_salida == "Cerrados (Cantidad Normal)":
+            nueva_cant = cant_actual + cant_mov
+            nueva_abiertos = cant_abiertos
+            tipo_historial = "Entrada"
+        else:
+            nueva_cant = cant_actual
+            nueva_abiertos = cant_abiertos + cant_mov
+            tipo_historial = "Entrada (Abiertos)"
         
     df_productos.loc[idx, "CANTIDAD_ACTUAL"] = nueva_cant
+    df_productos.loc[idx, "CANTIDAD_ABIERTOS"] = nueva_abiertos
     conn.update(worksheet="Productos", data=df_productos.astype(str))
     
     fecha_hoy = datetime.now().strftime('%Y-%m-%d')
     
     # 📝 REGISTRO EN LA PESTAÑA HISTORIAL CON SU DESCRIPCIÓN
-    registrar_en_historial(nombre, tipo, cant_mov, fecha_hoy, descripcion)
+    registrar_en_historial(nombre, tipo_historial, cant_mov, fecha_hoy, descripcion)
     
     # 📝 REGISTRO INVISIBLE EN LA PESTAÑA 'LONG'
     usuario_actual = st.session_state.get("usuario", "sistema")
-    registrar_en_hoja_long(usuario_actual, tipo, nombre, cant_mov, fecha_hoy)
+    registrar_en_hoja_long(usuario_actual, tipo_historial, nombre, cant_mov, fecha_hoy)
     
     st.success(f"Movimiento de {tipo.lower()} registrado con éxito.") 
 
@@ -227,7 +246,7 @@ def exportar_pdf():
     
     w_prod, w_cant, w_abierto, w_alm, w_fec = 65, 25, 25, 25, 50
     
-    pdf.set_font("Arial", 'B', 10) 
+    pdf.set_font("Arial", 'B', 9) 
     pdf.cell(w_prod, 8, "PRODUCTO", 1, 0, 'C') 
     pdf.cell(w_cant, 8, "CANTIDAD", 1, 0, 'C') 
     pdf.cell(w_abierto, 8, "ABIERTOS", 1, 0, 'C') 
@@ -237,15 +256,13 @@ def exportar_pdf():
     for _, row in df_productos.iterrows(): 
         prod_nombre = limpiar_texto_pdf(row["PRODUCTO"])
         cant = str(limpiar_entero(row["CANTIDAD_ACTUAL"]))
-        abiertos = str(limpiar_entero(row.get("ABIERTOS", 0)))
+        abiertos = str(limpiar_entero(row["CANTIDAD_ABIERTOS"]))
         almacen = str(row["ALMACEN"])
         fecha_ing = str(row.get("FECHA_INGRESO", "-"))
         
         pdf.set_font("Arial", '', 9)
         if pdf.get_string_width(prod_nombre) > (w_prod - 3):
             pdf.set_font("Arial", '', 7.5)
-            if pdf.get_string_width(prod_nombre) > (w_prod - 3):
-                pdf.set_font("Arial", '', 6.5)
         
         pdf.cell(w_prod, 8, prod_nombre, 1, 0, 'L') 
         
@@ -267,28 +284,27 @@ def exportar_pdf_pedidos():
     pdf.cell(0, 10, "Reporte de Productos por Agotarse", ln=True, align='C') 
     pdf.ln(5) 
     
-    w_prod, w_cant, w_alm = 110, 40, 40
+    w_prod, w_cant, w_abierto, w_alm = 90, 30, 30, 40
     
     pdf.set_font("Arial", 'B', 10) 
     pdf.cell(w_prod, 8, "PRODUCTO", 1, 0, 'C') 
     pdf.cell(w_cant, 8, "CANTIDAD", 1, 0, 'C') 
+    pdf.cell(w_abierto, 8, "ABIERTOS", 1, 0, 'C') 
     pdf.cell(w_alm, 8, "ALMACEN", 1, 1, 'C') 
     
     for _, row in df_productos.iterrows(): 
         cant = limpiar_entero(row["CANTIDAD_ACTUAL"])
+        abiertos = limpiar_entero(row["CANTIDAD_ABIERTOS"])
         if cant <= 1: 
             prod_nombre = limpiar_texto_pdf(row["PRODUCTO"])
             
             pdf.set_font("Arial", '', 9)
             if pdf.get_string_width(prod_nombre) > (w_prod - 3):
                 pdf.set_font("Arial", '', 7.5)
-                if pdf.get_string_width(prod_nombre) > (w_prod - 3):
-                    pdf.set_font("Arial", '', 6.5)
 
             pdf.cell(w_prod, 8, prod_nombre, 1, 0, 'L') 
-            
-            pdf.set_font("Arial", '', 9)
             pdf.cell(w_cant, 8, str(cant), 1, 0, 'C') 
+            pdf.cell(w_abierto, 8, str(abiertos), 1, 0, 'C') 
             pdf.cell(w_alm, 8, str(row["ALMACEN"]), 1, 1, 'C') 
             
     return bytes(pdf.output(dest='S'))
@@ -335,7 +351,7 @@ def exportar_excel_general(df, titulo_pestana="Inventario"):
                     max_len = len(val_str)
                 
                 col_upper = str(col_name).upper()
-                if any(k in col_upper for k in ["CANTIDAD", "ABIERTOS", "ALMACEN", "ALMACÉN", "FECHA", "TIPO"]):
+                if any(k in col_upper for k in ["CANTIDAD", "ALMACEN", "ALMACÉN", "FECHA", "TIPO", "ABIERTOS"]):
                     cell.alignment = centered_alignment
                 else:
                     cell.alignment = left_alignment
@@ -409,13 +425,17 @@ elif menu == "Registrar Movimiento":
         productos = sorted(df_productos["PRODUCTO"].astype(str).tolist()) 
         nombre = st.selectbox("Producto", productos) 
         tipo = st.radio("Tipo", ["Entrada", "Salida"]) 
+        
+        # Opción para elegir si afecta a la cantidad normal o a los abiertos
+        categoria_salida = st.radio("Aplicar a:", ["Cerrados (Cantidad Normal)", "Abiertos"])
+        
         cantidad = st.number_input("Cantidad", min_value=1, step=1) 
         
-        # APARTADO DE DESCRIPCIÓN OPCIONAL (Justo después de cantidad)
+        # APARTADO DE DESCRIPCIÓN OPCIONAL
         descripcion = st.text_input("Descripción (Opcional)", placeholder="Escribe un detalle o motivo opcional...")
         
         if st.button("Registrar Movimiento"): 
-            registrar_movimiento(nombre, tipo, cantidad, descripcion)
+            registrar_movimiento(nombre, tipo, categoria_salida, cantidad, descripcion)
             st.rerun()
 
 # --------VER INVENTARIO--------
@@ -438,7 +458,7 @@ elif menu == "Ver Inventario":
                 "Producto Original": nombre,
                 "PRODUCTO": nombre, 
                 "CANTIDAD": limpiar_entero(row["CANTIDAD_ACTUAL"]), 
-                "ABIERTOS": limpiar_entero(row.get("ABIERTOS", 0)),
+                "ABIERTOS": limpiar_entero(row["CANTIDAD_ABIERTOS"]),
                 "ALMACÉN": limpiar_entero(row["ALMACEN"]),
                 "FECHA INGRESO": fecha_ing 
             }) 
@@ -493,7 +513,7 @@ elif menu == "Ver Inventario":
                     original = fila["Producto Original"]
                     nuevo_nombre = fila["PRODUCTO"].strip().upper()
                     nueva_cantidad = limpiar_entero(fila["CANTIDAD"])
-                    nuevo_abiertos = limpiar_entero(fila["ABIERTOS"])
+                    nuevos_abiertos = limpiar_entero(fila["ABIERTOS"])
                     nueva_fecha_ing = fila["FECHA INGRESO"]
 
                     fila_previa = df_productos[df_productos["PRODUCTO"] == original]
@@ -502,7 +522,7 @@ elif menu == "Ver Inventario":
                     nuevos_productos.append({
                         "PRODUCTO": nuevo_nombre,
                         "CANTIDAD_ACTUAL": nueva_cantidad,
-                        "ABIERTOS": nuevo_abiertos,
+                        "CANTIDAD_ABIERTOS": nuevos_abiertos,
                         "ALMACEN": fila["ALMACÉN"],
                         "FECHA_INGRESO": nueva_fecha_ing
                     })
@@ -569,10 +589,12 @@ elif menu == "Solicitar Pedidos":
     if not df_productos.empty:
         for _, row in df_productos.iterrows():
             cant = limpiar_entero(row["CANTIDAD_ACTUAL"])
+            abiertos = limpiar_entero(row["CANTIDAD_ABIERTOS"])
             if cant <= 1:
                 bajos.append({
                     "PRODUCTO": row["PRODUCTO"],
                     "CANTIDAD": cant,
+                    "ABIERTOS": abiertos,
                     "ALMACÉN": limpiar_entero(row["ALMACEN"])
                 })
 
@@ -587,6 +609,10 @@ elif menu == "Solicitar Pedidos":
             column_config={
                 "PRODUCTO": st.column_config.TextColumn(),
                 "CANTIDAD": st.column_config.NumberColumn(
+                    alignment="center",
+                    format="%d"
+                ),
+                "ABIERTOS": st.column_config.NumberColumn(
                     alignment="center",
                     format="%d"
                 ),
@@ -605,6 +631,15 @@ elif menu == "Solicitar Pedidos":
                 "📥 Descargar Pedidos PDF",
                 exportar_pdf_pedidos(),
                 "reporte_pedidos.pdf",
+                mime="application/pdf"
+            )
+        with col_p2:
+            st.download_button(
+                "📊 Descargar Pedidos Excel",
+                exportar_excel_general(df_bajos, "Pedidos"),
+                "reporte_pedidos.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
                 mime="application/pdf"
             )
         with col_p2:
