@@ -11,12 +11,7 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="expanded"
 ) 
-st.set_page_config(
-    page_title="Mi Página Web",
-    page_icon="LOGOGCM.png", 
-    layout="centered"
-)
-st.logo("LOGOGCM.png")
+
 # 🔐 USUARIOS AUTORIZADOS (EDITA AQUÍ)
 USUARIOS = {
     "zaid": "2010",
