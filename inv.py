@@ -88,7 +88,7 @@ with col_menu:
         label_visibility="collapsed"
     )
     
-    col_btn1, col_btn2 = st.columns(2)
+    col_btn1, col_btn2 = st.columns(1)
     with col_btn1:
         if st.button("🔄 Actualizar"):
             st.cache_data.clear()
