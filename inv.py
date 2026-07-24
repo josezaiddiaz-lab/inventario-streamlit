@@ -40,7 +40,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------INTERFAZ / CABECERA SUPERIOR---------- 
-col_title, col_menu, col_logo = st.columns([6, 2, 1.2])
+col_title, col_menu, col_logo = st.columns([6, 2.5, 1.2])
 
 with col_title:
     st.title("Control de Inventario GCM")
