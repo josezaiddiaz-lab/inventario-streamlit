@@ -259,7 +259,7 @@ if menu == "Registrar Producto":
     st.text_input("Nombre del producto", key="nombre") 
     st.number_input("Cantidad total inicial", min_value=0, step=1, key="cantidad_total") 
     st.number_input("¿Cuántos de estos son abiertos y en buen estado?", min_value=0, max_value=int(st.session_state.cantidad_total), step=1, key="cantidad_abiertos")
-    st.selectbox("Almacén", [1 - 99], key="almacen")
+    st.selectbox("Almacén", [min="1" max="99"], key="almacen")
     st.date_input("Fecha de ingreso", key="fecha_ingreso")
     
     st.button("Registrar Producto", on_click=procesar_y_limpiar)
