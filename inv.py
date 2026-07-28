@@ -139,8 +139,10 @@ def cargar_inventario_dataframe():
             df["FECHA INGRESO"] = ""
         if "OBSERVACION" not in df.columns:
             df["OBSERVACION"] = ""
-        if "IMAGEN" not in df.columns:
-            df["IMAGEN"] = ""
+        if "IMAGEN 1" not in df.columns:
+            df["IMAGEN 1"] = ""
+        if "IMAGEN 2" not in df.columns:
+            df["IMAGEN 2"] = ""
             
         df = df.dropna(subset=["PRODUCTO"])
         df = df[df["PRODUCTO"].astype(str).str.strip() != ""]
@@ -250,7 +252,8 @@ if menu == "Registrar Producto":
                     "ALMACEN": alm,
                     "FECHA INGRESO": fecha_str,
                     "OBSERVACION": obs,
-                    "IMAGEN": ""
+                    "IMAGEN 1": "",
+                    "IMAGEN 2": ""
                 }])
                 
                 df_actualizado = pd.concat([df_productos, nuevo_prod_df], ignore_index=True)
@@ -402,13 +405,20 @@ elif menu == "Ver Inventario":
                     nueva_fecha_ing = fila["FECHA INGRESO"]
                     nueva_obs = fila["OBSERVACION"]
 
+                    # Mantener columnas de imágenes existentes al actualizar la tabla general
+                    prod_ant = df_productos[df_productos["PRODUCTO"] == fila["Producto Original"]]
+                    img1 = prod_ant.iloc[0].get("IMAGEN 1", "") if not prod_ant.empty else ""
+                    img2 = prod_ant.iloc[0].get("IMAGEN 2", "") if not prod_ant.empty else ""
+
                     nuevos_productos.append({
                         "PRODUCTO": nuevo_nombre,
                         "CANTIDAD TOTAL": nueva_total,
                         "CANTIDAD ABIERTOS": nuevo_abiertos,
                         "ALMACEN": fila["ALMACÉN"],
                         "FECHA INGRESO": nueva_fecha_ing,
-                        "OBSERVACION": nueva_obs
+                        "OBSERVACION": nueva_obs,
+                        "IMAGEN 1": img1,
+                        "IMAGEN 2": img2
                     })
 
                 df_nuevos_prod = pd.DataFrame(nuevos_productos)
@@ -583,7 +593,7 @@ elif menu == "Ver Inventario":
 
 # --------VISUALIZAR PRODUCTO--------
 elif menu == "Visualizar Producto":
-    st.subheader("Visualizar Detalles e Imagen del Producto")
+    st.subheader("Visualizar Detalles e Imágenes del Producto")
     df_productos = cargar_inventario_dataframe()
     
     if df_productos.empty:
@@ -607,35 +617,39 @@ elif menu == "Visualizar Producto":
             
             with col_img:
                 st.markdown("### 🖼️ Imágenes del Producto")
-                img_url = row.get("IMAGEN", "")
+                img_url_1 = row.get("IMAGEN 1", "")
+                img_url_2 = row.get("IMAGEN 2", "")
                 
-                # Mostrar imagen principal existente si la hay
-                if isinstance(img_url, str) and img_url.strip():
-                    try:
-                        st.image(img_url, width=300)
-                    except Exception:
-                        st.warning("No se pudo cargar la imagen principal.")
-                else:
-                    st.info("Este producto no tiene una imagen principal asignada.")
+                col_i1, col_i2 = st.columns(2)
+                with col_i1:
+                    st.write("**Imagen 1:**")
+                    if isinstance(img_url_1, str) and img_url_1.strip():
+                        try:
+                            st.image(img_url_1, width=150)
+                        except Exception:
+                            st.warning("No se pudo cargar.")
+                    else:
+                        st.info("Sin imagen 1")
                 
-                # Widget para subir múltiples archivos desde la computadora
-                archivos_subidos = st.file_uploader(
-                    "Sube una o varias imágenes nuevas", 
-                    type=["png", "jpg", "jpeg"], 
-                    accept_multiple_files=True
-                )
+                with col_i2:
+                    st.write("**Imagen 2:**")
+                    if isinstance(img_url_2, str) and img_url_2.strip():
+                        try:
+                            st.image(img_url_2, width=150)
+                        except Exception:
+                            st.warning("No se pudo cargar.")
+                    else:
+                        st.info("Sin imagen 2")
                 
-                if archivos_subidos:
-                    st.success(f"¡Se han seleccionado {len(archivos_subidos)} archivo(s)!")
-                    for archivo in archivos_subidos:
-                        st.image(archivo, width=150)
+                nueva_url_1 = st.text_input("URL Imagen 1", value=img_url_1 if isinstance(img_url_1, str) else "")
+                nueva_url_2 = st.text_input("URL Imagen 2", value=img_url_2 if isinstance(img_url_2, str) else "")
                 
-                nueva_url = st.text_input("Actualizar URL de imagen (opcional)", value=img_url if isinstance(img_url, str) else "")
-                if st.button("Guardar URL de Imagen"):
+                if st.button("Guardar URLs de Imágenes"):
                     idx = df_productos[df_productos["PRODUCTO"] == prod_seleccionado].index[0]
-                    df_productos.loc[idx, "IMAGEN"] = nueva_url
+                    df_productos.loc[idx, "IMAGEN 1"] = nueva_url_1
+                    df_productos.loc[idx, "IMAGEN 2"] = nueva_url_2
                     conn.update(worksheet="Productos", data=df_productos.astype(str))
-                    st.success("✅ Imagen actualizada con éxito.")
+                    st.success("✅ Imágenes actualizadas con éxito.")
                     st.rerun()
 
 # --------HISTORIAL--------
